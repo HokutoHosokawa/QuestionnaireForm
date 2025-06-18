@@ -88,8 +88,7 @@
             { "id": "q2-19", "label": "allow players to build things freely" },
             { "id": "q2-20", "label": "involve creating unique solutions or constructing original structures" },
             { "id": "q2-21", "label": "promote creative approaches to challenges" }
-          ],
-          "next": "main_question"
+          ]
       }
   ]
 }
