@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>リダイレクト中...</title>
+    <script type="text/javascript">
+        // 現在のパスを取得 (例: /repo-name/Questionnaire1)
+        const path = window.location.pathname;
+
+        // クエリパラメータとして渡すパス部分を生成
+        // (先頭のスラッシュは維持)
+        // 例: /repo-name/Questionnaire1 -> ?path=/Questionnaire1
+        // GitHub Pagesのリポジトリ名部分は除外する
+        const segments = path.split('/').filter(Boolean);
+        const path_to_pass = '/' + segments.slice(1).join('/');
+
+        // リダイレクト先のURLを構築
+        // 例: /repo-name/index.html?path=/Questionnaire1
+        const redirectUrl = `/${segments[0]}/index.html?path=${path_to_pass}`;
+
+        // index.htmlにリダイレクト
+        window.location.replace(redirectUrl);
+    </script>
+</head>
+
+<body>
+    <p>ページを読み込んでいます...</p>
+</body>
+
+</html>

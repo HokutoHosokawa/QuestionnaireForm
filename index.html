@@ -3,11 +3,28 @@
 
 <head>
     <meta charset="UTF-8">
+    <!-- ▼▼▼ GitHub Pages用リダイレクト処理 ▼▼▼ -->
+    <script>
+        (function () {
+            // 404.htmlからリダイレクトされた場合のクエリパラメータを取得
+            const params = new URLSearchParams(window.location.search);
+            const path = params.get('path');
+            if (path) {
+                // GitHub Pagesのリポジトリ名部分を含むパスを取得
+                // 例: /my-repo/index.html -> /my-repo
+                const repoPath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+                // URLを書き換える (見た目をクリーンにし、リロードを防ぐ)
+                // 例: /my-repo/index.html?path=/survey1 -> /my-repo/survey1
+                window.history.replaceState(null, '', repoPath + path);
+            }
+        })();
+    </script>
+    <!-- ▲▲▲ ここまで ▲▲▲ -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>アンケートフォーム</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* カスタムスタイル */
+        /* カスタムスタイル (変更なし) */
         body {
             font-family: 'Inter', 'Noto Sans JP', sans-serif;
         }
@@ -15,7 +32,6 @@
         .required-label::after {
             content: '*';
             color: #ef4444;
-            /* red-500 */
             margin-left: 0.25rem;
         }
 
@@ -25,7 +41,6 @@
             margin-top: 0.25rem;
         }
 
-        /* 入力フォームにパディングを追加 */
         input[type="text"],
         input[type="number"],
         input[type="date"],
@@ -35,19 +50,14 @@
             padding: 0.5rem 0.75rem !important;
         }
 
-        /* matrix/multi_matrixのセル内のクリック領域を拡大 */
         .matrix-cell-label {
             display: block;
-            /* labelをブロック要素にしてクリック領域を広げる */
             padding: 0.5rem;
-            /* クリック可能な領域を広げる */
             cursor: pointer;
         }
 
-        /* matrix/multi_matrixのセル内のラジオボタン/チェックボックスの表示調整 */
         .matrix-cell-label input {
             margin-right: 0.5rem;
-            /* inputとテキストの間にスペース */
         }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -110,14 +120,36 @@
         <p class="text-gray-700">アンケートへの回答が正常に送信されました。</p>
     </div>
 
-    <script>
-        // --- アンケートJSONデータ (外部ファイルから読み込むため、ここでは定義を削除) ---
-        let surveyJSONData = {}; // グローバルスコープで宣言のみ行う
+    <!-- ▼▼▼ メインのJavaScript処理 ▼▼▼ -->
+    <script type="module">
+        // Firebase SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-        // --- 設定 ---
-        const QUESTIONS_PER_PAGE = 20; // 1ページあたりの最大質問数
+        // --- Firebase設定 (ご自身のプロジェクトのものに置き換えてください) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPVmVHYilSNRCBPapItOZyOUFAwLe8nY4",
+            authDomain: "game-of-questionnaire.firebaseapp.com",
+            projectId: "game-of-questionnaire",
+            storageBucket: "game-of-questionnaire.firebasestorage.app",
+            messagingSenderId: "70165208444",
+            appId: "1:70165208444:web:7b296d37d395540d1658f9"
+        };
 
-        // --- DOM要素 ---
+        // Firebaseの初期化
+        let db;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebaseの初期化に失敗しました。設定情報を確認してください。", e);
+        }
+
+
+        // --- アンケートJSONデータ ---
+        let surveyJSONData = {};
+
+        // --- DOM要素 (変更なし) ---
         const appContainer = document.getElementById('app-container');
         const loadingSpinner = document.getElementById('loading-spinner');
         const errorDisplay = document.getElementById('error-display');
@@ -131,574 +163,205 @@
         const progressText = document.getElementById('progress-text');
         const thankYouMessage = document.getElementById('thank-you-message');
 
-        // --- 状態管理 ---
-        // surveyData は initializeSurvey で questionnaire.json からロードされます
+        // --- 状態管理 (変更なし) ---
         let answers = {};
-        // pageHistoryは { groupId: '...', pageNumber: N } のようなオブジェクトを保存
         let pageHistory = [];
-        let currentPageIndex = 0; // pageHistory内のインデックス
+        let currentPageIndex = 0;
 
-        // --- 初期化 ---
+        // --- 初期化 (ここを大幅に修正) ---
         document.addEventListener('DOMContentLoaded', initializeSurvey);
 
-        async function initializeSurvey() { // async function に変更
-            try {
-                // questionnaire.json からデータをフェッチ
-                const response = await fetch('questionnaire.json');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                surveyJSONData = await response.json(); // グローバル変数にJSONデータを割り当て
+        async function initializeSurvey() {
+            if (!db) {
+                showError("データベース接続に失敗しました。Firebaseの設定を確認してください。");
+                loadingSpinner.style.display = 'none';
+                appContainer.classList.remove('hidden');
+                return;
+            }
 
-                // JSONデータが正しく読み込まれた後の処理
+            try {
+                // 1. URLパスからアンケートIDを取得
+                // 例: "https://user.github.io/repo-name/survey1" -> "survey1"
+                // .filter(Boolean)で空の要素を取り除く
+                const pathSegments = window.location.pathname.split('/').filter(Boolean);
+                // 最後の要素がアンケートID。リポジトリ名の場合はundefinedになる
+                const surveyId = pathSegments[pathSegments.length - 1];
+                const repoName = pathSegments[0];
+
+                // ルートパスやリポジトリ名直下へのアクセスはエラー
+                if (!surveyId || surveyId === repoName || surveyId === "index.html") {
+                    showError('有効なアンケートが指定されていません。URLの末尾にアンケート名を指定してください。 (例: .../Questionnaire1)');
+                    return;
+                }
+
+                // 2. FirebaseからアンケートIDに対応するJSONファイル名を取得
+                const surveyDocRef = doc(db, 'surveys', surveyId);
+                const surveyDocSnap = await getDoc(surveyDocRef);
+
+                if (!surveyDocSnap.exists()) {
+                    throw new Error(`指定されたアンケートID "${surveyId}" はデータベースに見つかりませんでした。`);
+                }
+
+                const surveyMappingData = surveyDocSnap.data();
+                const jsonFileName = surveyMappingData.jsonFile;
+
+                if (!jsonFileName) {
+                    throw new Error(`アンケートID "${surveyId}" の設定にJSONファイル名がありません。`);
+                }
+
+                // 3. 取得したJSONファイル名を元にアンケートデータをフェッチ
+                // JSONファイルはindex.htmlからの相対パスにあると仮定
+                const response = await fetch(jsonFileName);
+                if (!response.ok) {
+                    throw new Error(`アンケートファイル '${jsonFileName}' の読み込みに失敗しました。 (HTTP ${response.status})`);
+                }
+                surveyJSONData = await response.json();
+
+                // 4. アンケートの描画（元のロジックを流用）
                 formTitleEl.textContent = surveyJSONData.title;
                 formDescriptionEl.textContent = surveyJSONData.description;
 
-                // 最初のグループと最初のページから開始
                 const firstGroupId = surveyJSONData.question_groups[0]?.id;
                 if (firstGroupId) {
                     generatePage(firstGroupId, 0);
                 }
 
             } catch (error) {
-                console.error('アンケートJSONの読み込みに失敗しました:', error);
-                showError(`アンケート設定の読み込みに失敗しました: ${error.message}。ファイルが正しい場所にあるか、JSON形式が正しいか確認してください。`);
-                // エラー時はフォームを表示せず、ローディングスピナーも隠す
+                console.error('アンケートの初期化に失敗しました:', error);
+                showError(`${error.message}`);
+            } finally {
                 loadingSpinner.style.display = 'none';
                 appContainer.classList.remove('hidden');
-                document.getElementById('quiz-form').style.display = 'none';
-                document.getElementById('navigation-controls').style.display = 'none';
-                return;
+                if (!surveyJSONData.title) {
+                    document.getElementById('quiz-form').style.display = 'none';
+                    document.getElementById('navigation-controls').style.display = 'none';
+                    document.getElementById('form-header').style.display = 'none';
+                }
             }
+        }
 
+        // showError関数を少し変更
+        function showError(message) {
+            errorDisplayMessage.textContent = message;
+            errorDisplay.classList.remove('hidden');
+            // ローディングを隠し、コンテナを表示
             loadingSpinner.style.display = 'none';
             appContainer.classList.remove('hidden');
+            // エラー時はフォーム関連を非表示にする
+            document.getElementById('quiz-form').style.display = 'none';
+            document.getElementById('navigation-controls').style.display = 'none';
+            document.getElementById('form-header').style.display = 'none';
+            document.getElementById('progress-container').style.display = 'none';
         }
 
-        // 配列をシャッフルするヘルパー関数 (Fisher-Yatesアルゴリズム)
-        function shuffleArray(array) {
-            for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]]; // 要素を交換
-            }
-        }
-
-        // --- ページと質問のレンダリング ---
+        /*
+        ================================================================
+        以降のJavaScript関数 (generatePage, createQuestionElement, etc.)
+        は、変更の必要はありません。元のコードをそのまま流用してください。
+        ================================================================
+        */
+        function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } }
         function generatePage(groupId, pageNumber = 0) {
-            const group = surveyJSONData.question_groups.find(g => g.id === groupId); // surveyJSONData を使用
-            if (!group) {
-                console.error(`Group with ID '${groupId}' not found.`);
+            const group = surveyJSONData.question_groups.find(g => g.id === groupId); if (!group) { console.error(`Group with ID '${groupId}' not found.`); return; }
+            if (group.randomize && !group._shuffled) { shuffleArray(group.questions); group._shuffled = true; console.log(`Group '${group.id}' questions shuffled.`); }
+            const totalGroupPages = Math.ceil(group.questions.length / 20); if (pageNumber >= totalGroupPages) {
+                const nextGroupId = findNextGroupIdForGroup(groupId); if (nextGroupId === "") { submitForm(); } else if (nextGroupId) { generatePage(nextGroupId, 0); } else { updateNavigation(); }
                 return;
             }
-
-            // ランダム化が要求され、かつまだシャッフルされていない場合、質問をシャッフル
-            if (group.randomize && !group._shuffled) {
-                shuffleArray(group.questions);
-                group._shuffled = true; // シャッフル済みマークを設定し、再シャッフルを防ぐ
-                console.log(`Group '${group.id}' questions shuffled.`);
-            }
-
-            // このグループの総ページ数を決定
-            const totalGroupPages = Math.ceil(group.questions.length / QUESTIONS_PER_PAGE);
-
-            // 現在のグループ内で存在しないページへ移動しようとしている場合、次のグループへ移動するか、フォームを送信
-            if (pageNumber >= totalGroupPages) {
-                const nextGroupId = findNextGroupIdForGroup(groupId);
-                if (nextGroupId === "") {
-                    submitForm();
-                } else if (nextGroupId) {
-                    // 次のグループへ移動し、最初のページ（ページ0）から開始
-                    generatePage(nextGroupId, 0);
-                } else {
-                    // これ以上グループがない場合、アンケートの終了とみなし、ナビゲーションを更新
-                    updateNavigation();
-                }
-                return;
-            }
-
-            // 前方にナビゲートする場合、現在のページインデックスから履歴をクリア
-            // これは、ユーザーが戻って別のパスを選択した場合に対応
-            pageHistory = pageHistory.slice(0, currentPageIndex);
-            pageHistory.push({ groupId, pageNumber, group }); // グループとページ番号を履歴に保存
-            currentPageIndex = pageHistory.length - 1; // currentPageIndexを更新
-
-            renderPageContent();
+            pageHistory = pageHistory.slice(0, currentPageIndex); pageHistory.push({ groupId, pageNumber, group }); currentPageIndex = pageHistory.length - 1; renderPageContent();
         }
-
         function renderPageContent() {
-            questionsContainer.innerHTML = '';
-            const currentPageData = pageHistory[currentPageIndex];
-            if (!currentPageData) return;
-
-            const { group, pageNumber } = currentPageData;
-
-            // 各ページの最初にグループヘッダーを表示
-            const groupHeader = document.createElement('div');
-            groupHeader.className = 'border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-lg mb-8';
-            groupHeader.innerHTML = `
+            questionsContainer.innerHTML = ''; const currentPageData = pageHistory[currentPageIndex]; if (!currentPageData) return; const { group, pageNumber } = currentPageData; const groupHeader = document.createElement('div'); groupHeader.className = 'border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r-lg mb-8'; groupHeader.innerHTML = `
         <h3 class="text-xl font-bold text-gray-800">${group.title}</h3>
         <p class="text-gray-600 mt-1">${group.description}</p>
-    `;
-            questionsContainer.appendChild(groupHeader);
-
-            // 現在のページに表示する質問を計算
-            const startIndex = pageNumber * QUESTIONS_PER_PAGE;
-            const endIndex = Math.min(startIndex + QUESTIONS_PER_PAGE, group.questions.length);
-            const questionsToDisplay = group.questions.slice(startIndex, endIndex);
-
-            questionsToDisplay.forEach((q, indexInPage) => {
-                // グループ内での全体的な質問番号を計算
-                const overallQuestionNumber = startIndex + indexInPage;
-                const questionData = { ...(group.defaults || {}), ...q };
-                const questionElement = createQuestionElement(questionData, overallQuestionNumber);
-                questionsContainer.appendChild(questionElement);
-            });
-
-            updateNavigation();
-            updateProgressBar();
+    `; questionsContainer.appendChild(groupHeader); const startIndex = pageNumber * 20; const endIndex = Math.min(startIndex + 20, group.questions.length); const questionsToDisplay = group.questions.slice(startIndex, endIndex); questionsToDisplay.forEach((q, indexInPage) => { const overallQuestionNumber = startIndex + indexInPage; const questionData = { ...(group.defaults || {}), ...q }; const questionElement = createQuestionElement(questionData, overallQuestionNumber); questionsContainer.appendChild(questionElement); }); updateNavigation(); updateProgressBar();
         }
-
         function createQuestionElement(q, overallIndex) {
-            const questionDiv = document.createElement('div');
-            questionDiv.className = 'question-block border-t pt-6';
-            questionDiv.id = `q-block-${q.id}`;
-
-            let label = `<label for="${q.id}" class="block text-md font-medium text-gray-800 ${q.required ? 'required-label' : ''}">${overallIndex + 1}. ${q.label}</label>`;
-            let helpText = q.help_text ? `<p class="text-sm text-gray-500 mt-1">${q.help_text}</p>` : '';
-            let inputHtml = '';
-
-            switch (q.type) {
-                case 'text_short':
-                    inputHtml = `<input type="text" id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || ''}">`;
-                    break;
-                case 'text_long':
-                    inputHtml = `<textarea id="${q.id}" name="${q.id}" rows="4" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || ''}"></textarea>`;
-                    break;
-                case 'number':
-                    inputHtml = `<input type="number" id="${q.id}" name="${q.id}" min="${q.min}" max="${q.max}" step="${q.step || 1}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || ''}">`;
-                    break;
-                case 'date':
-                    inputHtml = `<input type="date" id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">`;
-                    break;
-                case 'boolean':
-                    inputHtml = `<div class="mt-2 space-x-4">
+            const questionDiv = document.createElement('div'); questionDiv.className = 'question-block border-t pt-6'; questionDiv.id = `q-block-${q.id}`; let label = `<label for="${q.id}" class="block text-md font-medium text-gray-800 ${q.required ? 'required-label' : ''}">${overallIndex + 1}. ${q.label}</label>`; let helpText = q.help_text ? `<p class="text-sm text-gray-500 mt-1">${q.help_text}</p>` : ''; let inputHtml = ''; switch (q.type) {
+                case 'text_short': inputHtml = `<input type="text" id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || ''}">`; break; case 'text_long': inputHtml = `<textarea id="${q.id}" name="${q.id}" rows="4" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || ''}"></textarea>`; break; case 'number': inputHtml = `<input type="number" id="${q.id}" name="${q.id}" min="${q.min}" max="${q.max}" step="${q.step || 1}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || ''}">`; break; case 'date': inputHtml = `<input type="date" id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">`; break; case 'boolean': inputHtml = `<div class="mt-2 space-x-4">
                 <label class="inline-flex items-center"><input type="radio" name="${q.id}" value="true" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"> <span class="ml-2">${q.TrueLabel || 'はい'}</span></label>
                 <label class="inline-flex items-center"><input type="radio" name="${q.id}" value="false" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"> <span class="ml-2">${q.FalseLabel || 'いいえ'}</span></label>
-            </div>`;
-                    break;
-                case 'radio':
-                    inputHtml = '<div class="mt-2 space-y-2">';
-                    q.options.forEach(opt => {
-                        inputHtml += `<label class="flex items-center"><input type="radio" name="${q.id}" value="${opt}" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"> <span class="ml-3 block text-sm text-gray-700">${opt}</span></label>`;
-                    });
-                    inputHtml += '</div>';
-                    break;
-                case 'checkbox':
-                    inputHtml = '<div class="mt-2 space-y-2">';
-                    q.options.forEach(opt => {
-                        inputHtml += `<label class="flex items-center"><input type="checkbox" name="${q.id}" value="${opt}" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500"> <span class="ml-3 block text-sm text-gray-700">${opt}</span></label>`;
-                    });
-                    inputHtml += '</div>';
-                    break;
-                case 'pull_down':
-                    inputHtml = `<select id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"><option value="">選択してください</option>`;
-                    q.options.forEach(opt => {
-                        inputHtml += `<option value="${opt}">${opt}</option>`;
-                    });
-                    inputHtml += '</select>';
-                    break;
-                case 'scale':
-                    inputHtml = `<div class="mt-3 flex items-center justify-between space-x-2 sm:space-x-4">
+            </div>`; break; case 'radio': inputHtml = '<div class="mt-2 space-y-2">'; q.options.forEach(opt => { inputHtml += `<label class="flex items-center"><input type="radio" name="${q.id}" value="${opt}" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"> <span class="ml-3 block text-sm text-gray-700">${opt}</span></label>`; }); inputHtml += '</div>'; break; case 'checkbox': inputHtml = '<div class="mt-2 space-y-2">'; q.options.forEach(opt => { inputHtml += `<label class="flex items-center"><input type="checkbox" name="${q.id}" value="${opt}" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500"> <span class="ml-3 block text-sm text-gray-700">${opt}</span></label>`; }); inputHtml += '</div>'; break; case 'pull_down': inputHtml = `<select id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"><option value="">選択してください</option>`; q.options.forEach(opt => { inputHtml += `<option value="${opt}">${opt}</option>`; }); inputHtml += '</select>'; break; case 'scale': inputHtml = `<div class="mt-3 flex items-center justify-between space-x-2 sm:space-x-4">
                             <span class="text-sm text-gray-600 text-center w-1/5">${q.minLabel}</span>
-                            <div class="flex-grow flex justify-around items-center">`;
-                    for (let i = q.min; i <= q.max; i++) {
+                            <div class="flex-grow flex justify-around items-center">`; for (let i = q.min; i <= q.max; i++) {
                         inputHtml += `<label class="flex flex-col items-center cursor-pointer p-2 rounded-md hover:bg-gray-100">
                     <input type="radio" name="${q.id}" value="${i}" class="h-5 w-5 text-blue-600 border-gray-300 focus:ring-blue-500">
                     <span class="text-sm mt-1.5">${i}</span>
                 </label>`;
                     }
-                    inputHtml += `</div><span class="text-sm text-gray-600 text-center w-1/5">${q.maxLabel}</span></div>`;
-                    break;
-                case 'slider':
-                    inputHtml = `<div class="mt-3">
+                    inputHtml += `</div><span class="text-sm text-gray-600 text-center w-1/5">${q.maxLabel}</span></div>`; break; case 'slider': inputHtml = `<div class="mt-3">
                 <input type="range" id="${q.id}" name="${q.id}" min="${q.min}" max="${q.max}" step="${q.step}" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" oninput="document.getElementById('${q.id}-value').textContent = this.value">
                 <div class="text-center mt-1"><span id="${q.id}-value" class="text-sm font-medium text-gray-700">${q.min}</span></div>
-            </div>`;
-                    break;
-                case 'matrix': // matrixのクリック領域を修正
-                    inputHtml = '<div class="mt-2 overflow-x-auto"><table class="min-w-full divide-y divide-gray-200 border">';
-                    inputHtml += '<thead><tr><th class="px-6 py-3 bg-gray-50"></th>';
-                    q.options[1].forEach(col => inputHtml += `<th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${col}</th>`);
-                    inputHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
-                    q.options[0].forEach((row, rowIndex) => {
-                        inputHtml += `<tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${row}</td>`;
-                        q.options[1].forEach((col, colIndex) => {
+            </div>`; break; case 'matrix': inputHtml = '<div class="mt-2 overflow-x-auto"><table class="min-w-full divide-y divide-gray-200 border">'; inputHtml += '<thead><tr><th class="px-6 py-3 bg-gray-50"></th>'; q.options[1].forEach(col => inputHtml += `<th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${col}</th>`); inputHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">'; q.options[0].forEach((row, rowIndex) => {
+                        inputHtml += `<tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${row}</td>`; q.options[1].forEach((col, colIndex) => {
                             inputHtml += `<td class="px-0 py-0 whitespace-nowrap text-center">
                                     <label class="matrix-cell-label flex items-center justify-center h-full w-full">
                                         <input type="radio" name="${q.id}-${rowIndex}" value="${col}" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500">
                                     </label>
                                   </td>`;
-                        });
-                        inputHtml += '</tr>';
-                    });
-                    inputHtml += '</tbody></table></div>';
-                    break;
-                case 'multi_matrix': // 新しいmulti_matrixタイプを追加
-                    inputHtml = '<div class="mt-2 overflow-x-auto"><table class="min-w-full divide-y divide-gray-200 border">';
-                    inputHtml += '<thead><tr><th class="px-6 py-3 bg-gray-50"></th>';
-                    q.options[1].forEach(col => inputHtml += `<th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${col}</th>`);
-                    inputHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
-                    q.options[0].forEach((row, rowIndex) => {
-                        inputHtml += `<tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${row}</td>`;
-                        q.options[1].forEach((col, colIndex) => {
+                        }); inputHtml += '</tr>';
+                    }); inputHtml += '</tbody></table></div>'; break; case 'multi_matrix': inputHtml = '<div class="mt-2 overflow-x-auto"><table class="min-w-full divide-y divide-gray-200 border">'; inputHtml += '<thead><tr><th class="px-6 py-3 bg-gray-50"></th>'; q.options[1].forEach(col => inputHtml += `<th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${col}</th>`); inputHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">'; q.options[0].forEach((row, rowIndex) => {
+                        inputHtml += `<tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${row}</td>`; q.options[1].forEach((col, colIndex) => {
                             inputHtml += `<td class="px-0 py-0 whitespace-nowrap text-center">
                                     <label class="matrix-cell-label flex items-center justify-center h-full w-full">
                                         <input type="checkbox" name="${q.id}-${rowIndex}[]" value="${col}" class="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500">
                                     </label>
                                   </td>`;
-                        });
-                        inputHtml += '</tr>';
-                    });
-                    inputHtml += '</tbody></table></div>';
-                    break;
-                case 'email':
-                    inputHtml = `<input type="email" id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || 'your@example.com'}">`;
-                    break;
-                default:
-                    inputHtml = `<p class="text-red-500">Unsupported question type: ${q.type}</p>`;
+                        }); inputHtml += '</tr>';
+                    }); inputHtml += '</tbody></table></div>'; break; case 'email': inputHtml = `<input type="email" id="${q.id}" name="${q.id}" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="${q.placeholder || 'your@example.com'}">`; break; default: inputHtml = `<p class="text-red-500">Unsupported question type: ${q.type}</p>`;
             }
-
-            questionDiv.innerHTML = label + helpText + inputHtml + `<div id="error-${q.id}" class="error-message"></div>`;
-            restoreAnswer(q);
-            return questionDiv;
+            questionDiv.innerHTML = label + helpText + inputHtml + `<div id="error-${q.id}" class="error-message"></div>`; restoreAnswer(q); return questionDiv;
         }
-
-        function restoreAnswer(q) {
-            // 以前の回答を復元するロジック
-            setTimeout(() => {
-                if (!answers[q.id]) return;
-                const value = answers[q.id];
-                if (q.type === 'checkbox') {
-                    document.querySelectorAll(`input[name="${q.id}"]`).forEach(el => { if (value.includes(el.value)) el.checked = true; });
-                } else if (q.type === 'radio' || q.type === 'scale' || q.type === 'boolean') {
-                    const el = document.querySelector(`input[name="${q.id}"][value="${value}"]`);
-                    if (el) el.checked = true;
-                } else if (q.type === 'matrix') {
-                    Object.entries(value).forEach(([rowIndex, colValue]) => {
-                        const el = document.querySelector(`input[name="${q.id}-${rowIndex}"][value="${colValue}"]`);
-                        if (el) el.checked = true;
-                    });
-                } else if (q.type === 'multi_matrix') { // multi_matrixの回答復元を追加
-                    if (typeof value === 'object' && value !== null) {
-                        Object.entries(value).forEach(([rowIndex, selectedOptions]) => {
-                            if (Array.isArray(selectedOptions)) {
-                                selectedOptions.forEach(option => {
-                                    const el = document.querySelector(`input[name="${q.id}-${rowIndex}[]"][value="${option}"]`);
-                                    if (el) el.checked = true;
-                                });
-                            }
-                        });
-                    }
-                } else {
-                    const el = document.getElementById(q.id);
-                    if (el) el.value = value;
-                    if (q.type === 'slider') {
-                        const valueEl = document.getElementById(`${q.id}-value`);
-                        if (valueEl) valueEl.textContent = value;
-                    }
-                }
-            }, 0);
-        }
-
-
-        // --- ナビゲーションとバリデーション ---
+        function restoreAnswer(q) { setTimeout(() => { if (!answers[q.id]) return; const value = answers[q.id]; if (q.type === 'checkbox') { document.querySelectorAll(`input[name="${q.id}"]`).forEach(el => { if (value.includes(el.value)) el.checked = true; }); } else if (q.type === 'radio' || q.type === 'scale' || q.type === 'boolean') { const el = document.querySelector(`input[name="${q.id}"][value="${value}"]`); if (el) el.checked = true; } else if (q.type === 'matrix') { Object.entries(value).forEach(([rowIndex, colValue]) => { const el = document.querySelector(`input[name="${q.id}-${rowIndex}"][value="${colValue}"]`); if (el) el.checked = true; }); } else if (q.type === 'multi_matrix') { if (typeof value === 'object' && value !== null) { Object.entries(value).forEach(([rowIndex, selectedOptions]) => { if (Array.isArray(selectedOptions)) { selectedOptions.forEach(option => { const el = document.querySelector(`input[name="${q.id}-${rowIndex}[]"][value="${option}"]`); if (el) el.checked = true; }); } }); } } else { const el = document.getElementById(q.id); if (el) el.value = value; if (q.type === 'slider') { const valueEl = document.getElementById(`${q.id}-value`); if (valueEl) valueEl.textContent = value; } } }, 0); }
         function updateNavigation() {
-            prevBtn.disabled = currentPageIndex === 0;
-
-            const currentPageData = pageHistory[currentPageIndex];
-            if (!currentPageData) {
-                nextBtn.classList.add('hidden');
-                submitBtn.classList.remove('hidden');
-                return;
-            }
-
-            const { groupId, pageNumber } = currentPageData;
-            const group = surveyJSONData.question_groups.find(g => g.id === groupId); // surveyJSONData を使用
-            const totalGroupPages = Math.ceil(group.questions.length / QUESTIONS_PER_PAGE);
-
-            // 現在のグループの最終ページかを確認
-            const isLastPageInGroup = (pageNumber + 1) >= totalGroupPages;
-
-            // 次のグループが存在するかを確認
-            const currentGroupIndex = surveyJSONData.question_groups.findIndex(g => g.id === groupId); // surveyJSONData を使用
-            const nextGroupExists = (currentGroupIndex + 1) < surveyJSONData.question_groups.length; // surveyJSONData を使用
-
-            // アンケート全体の最終ページかを確認
-            const isLastPageOfSurvey = isLastPageInGroup && !findNextGroupIdForGroup(groupId);
-
-            if (isLastPageOfSurvey) {
-                nextBtn.classList.add('hidden');
-                submitBtn.classList.remove('hidden');
-            } else {
-                nextBtn.classList.remove('hidden');
-                submitBtn.classList.add('hidden');
-            }
+            prevBtn.disabled = currentPageIndex === 0; const currentPageData = pageHistory[currentPageIndex]; if (!currentPageData) { nextBtn.classList.add('hidden'); submitBtn.classList.remove('hidden'); return; }
+            const { groupId, pageNumber } = currentPageData; const group = surveyJSONData.question_groups.find(g => g.id === groupId); const totalGroupPages = Math.ceil(group.questions.length / 20); const isLastPageInGroup = (pageNumber + 1) >= totalGroupPages; const currentGroupIndex = surveyJSONData.question_groups.findIndex(g => g.id === groupId); const nextGroupExists = (currentGroupIndex + 1) < surveyJSONData.question_groups.length; const isLastPageOfSurvey = isLastPageInGroup && !findNextGroupIdForGroup(groupId); if (isLastPageOfSurvey) { nextBtn.classList.add('hidden'); submitBtn.classList.remove('hidden'); } else { nextBtn.classList.remove('hidden'); submitBtn.classList.add('hidden'); }
         }
-
         function updateProgressBar() {
-            const currentPageData = pageHistory[currentPageIndex];
-            if (!currentPageData) {
-                progressText.textContent = '';
-                return;
-            }
-
-            const { groupId, pageNumber } = currentPageData;
-            const group = surveyJSONData.question_groups.find(g => g.id === groupId); // surveyJSONData を使用
-            const totalGroupPages = Math.ceil(group.questions.length / QUESTIONS_PER_PAGE);
-
-            // 全体的な進捗を計算（より複雑なロジックで全体の進捗を表示することも可能）
-            progressText.textContent = `グループ: ${group.title} | ページ: ${pageNumber + 1}/${totalGroupPages}`;
+            const currentPageData = pageHistory[currentPageIndex]; if (!currentPageData) { progressText.textContent = ''; return; }
+            const { groupId, pageNumber } = currentPageData; const group = surveyJSONData.question_groups.find(g => g.id === groupId); const totalGroupPages = Math.ceil(group.questions.length / 20); progressText.textContent = `グループ: ${group.title} | ページ: ${pageNumber + 1}/${totalGroupPages}`;
         }
-
-        function saveCurrentPageAnswers() {
-            const pageData = pageHistory[currentPageIndex];
-            if (!pageData) return;
-
-            // 現在のページに表示されている質問を取得
-            const { group, pageNumber } = pageData;
-            const startIndex = pageNumber * QUESTIONS_PER_PAGE;
-            const endIndex = Math.min(startIndex + QUESTIONS_PER_PAGE, group.questions.length);
-            const questionsOnCurrentPage = group.questions.slice(startIndex, endIndex);
-
-            questionsOnCurrentPage.forEach(q => {
-                const questionData = { ...(group.defaults || {}), ...q };
-                if (questionData.type === 'checkbox') {
-                    const checked = Array.from(document.querySelectorAll(`input[name="${questionData.id}"]:checked`)).map(el => el.value);
-                    answers[questionData.id] = checked;
-                } else if (questionData.type === 'radio' || questionData.type === 'scale' || questionData.type === 'boolean') {
-                    const el = document.querySelector(`input[name="${questionData.id}"]:checked`);
-                    if (el) answers[questionData.id] = el.value;
-                } else if (questionData.type === 'matrix') {
-                    answers[questionData.id] = {};
-                    questionData.options[0].forEach((row, rowIndex) => {
-                        const el = document.querySelector(`input[name="${questionData.id}-${rowIndex}"]:checked`);
-                        if (el) answers[questionData.id][rowIndex] = el.value;
-                    });
-                } else if (questionData.type === 'multi_matrix') { // multi_matrixの回答保存を追加
-                    answers[questionData.id] = {};
-                    questionData.options[0].forEach((row, rowIndex) => {
-                        const checked = Array.from(document.querySelectorAll(`input[name="${questionData.id}-${rowIndex}[]"]:checked`)).map(el => el.value);
-                        answers[questionData.id][rowIndex] = checked;
-                    });
-                } else {
-                    const el = document.getElementById(q.id);
-                    if (el) answers[q.id] = el.value;
-                }
-            });
-        }
-
+        function saveCurrentPageAnswers() { const pageData = pageHistory[currentPageIndex]; if (!pageData) return; const { group, pageNumber } = pageData; const startIndex = pageNumber * 20; const endIndex = Math.min(startIndex + 20, group.questions.length); const questionsOnCurrentPage = group.questions.slice(startIndex, endIndex); questionsOnCurrentPage.forEach(q => { const questionData = { ...(group.defaults || {}), ...q }; if (questionData.type === 'checkbox') { const checked = Array.from(document.querySelectorAll(`input[name="${questionData.id}"]:checked`)).map(el => el.value); answers[questionData.id] = checked; } else if (questionData.type === 'radio' || questionData.type === 'scale' || questionData.type === 'boolean') { const el = document.querySelector(`input[name="${questionData.id}"]:checked`); if (el) answers[questionData.id] = el.value; } else if (questionData.type === 'matrix') { answers[questionData.id] = {}; questionData.options[0].forEach((row, rowIndex) => { const el = document.querySelector(`input[name="${questionData.id}-${rowIndex}"]:checked`); if (el) answers[questionData.id][rowIndex] = el.value; }); } else if (questionData.type === 'multi_matrix') { answers[questionData.id] = {}; questionData.options[0].forEach((row, rowIndex) => { const checked = Array.from(document.querySelectorAll(`input[name="${questionData.id}-${rowIndex}[]"]:checked`)).map(el => el.value); answers[questionData.id][rowIndex] = checked; }); } else { const el = document.getElementById(q.id); if (el) answers[q.id] = el.value; } }); }
         function validateCurrentPage() {
-            let isValid = true;
-            const pageData = pageHistory[currentPageIndex];
-            if (!pageData) return false;
-
-            // 現在のページに表示されている質問を取得
-            const { group, pageNumber } = pageData;
-            const startIndex = pageNumber * QUESTIONS_PER_PAGE;
-            const endIndex = Math.min(startIndex + QUESTIONS_PER_PAGE, group.questions.length);
-            const questionsOnCurrentPage = group.questions.slice(startIndex, endIndex);
-
-            questionsOnCurrentPage.forEach(q => {
-                const questionData = { ...(group.defaults || {}), ...q };
-                const errorEl = document.getElementById(`error-${questionData.id}`);
-                if (errorEl) { // errorElが存在するか確認
-                    errorEl.textContent = '';
-                }
-
-                if (!questionData.required) return;
-
-                let answered = false;
-                const answer = answers[questionData.id];
-
-                if (questionData.type === 'checkbox') {
-                    answered = answer && answer.length > 0;
-                } else if (questionData.type === 'matrix') {
-                    // matrix質問の全ての行に回答があるか確認
-                    answered = answer && Object.keys(answer).length === questionData.options[0].length;
-                } else if (questionData.type === 'multi_matrix') { // multi_matrixのバリデーションを追加
-                    answered = answer && Object.keys(answer).length === questionData.options[0].length;
-                    if (answered) {
-                        // 各行で少なくとも1つ選択されているか確認
+            let isValid = true; const pageData = pageHistory[currentPageIndex]; if (!pageData) return false; const { group, pageNumber } = pageData; const startIndex = pageNumber * 20; const endIndex = Math.min(startIndex + 20, group.questions.length); const questionsOnCurrentPage = group.questions.slice(startIndex, endIndex); questionsOnCurrentPage.forEach(q => {
+                const questionData = { ...(group.defaults || {}), ...q }; const errorEl = document.getElementById(`error-${questionData.id}`); if (errorEl) { errorEl.textContent = ''; }
+                if (!questionData.required) return; let answered = false; const answer = answers[questionData.id]; if (questionData.type === 'checkbox') { answered = answer && answer.length > 0; } else if (questionData.type === 'matrix') { answered = answer && Object.keys(answer).length === questionData.options[0].length; } else if (questionData.type === 'multi_matrix') {
+                    answered = answer && Object.keys(answer).length === questionData.options[0].length; if (answered) {
                         for (const rowIndex in answer) {
-                            if (answer[rowIndex].length === 0) {
-                                answered = false;
-                                break;
-                            }
-                            // もしその行がオブジェクトで、かつ空のオブジェクトや空の配列でないことも確認
-                            if (typeof answer[rowIndex] === 'object' && Object.keys(answer[rowIndex]).length === 0 && !Array.isArray(answer[rowIndex])) {
-                                answered = false; // 空のオブジェクトは未回答と見なす
-                                break;
-                            }
-                            if (Array.isArray(answer[rowIndex]) && answer[rowIndex].length === 0) {
-                                answered = false; // 空の配列は未回答と見なす
-                                break;
-                            }
+                            if (answer[rowIndex].length === 0) { answered = false; break; }
+                            if (typeof answer[rowIndex] === 'object' && Object.keys(answer[rowIndex]).length === 0 && !Array.isArray(answer[rowIndex])) { answered = false; break; }
+                            if (Array.isArray(answer[rowIndex]) && answer[rowIndex].length === 0) { answered = false; break; }
                         }
                     }
-                    if (!answered && errorEl) {
-                        errorEl.textContent = '全ての行で少なくとも1つ選択してください。';
-                    }
-                } else if (questionData.type === 'email') {
-                    // 基本的なメールアドレスのバリデーション
-                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                    answered = answer && emailRegex.test(answer);
-                    if (!answered && errorEl) {
-                        errorEl.textContent = '有効なメールアドレスを入力してください。';
-                    }
-                } else {
-                    answered = answer !== undefined && answer !== null && answer !== '';
-                }
-
-                if (!answered) {
-                    isValid = false;
-                    if (errorEl) { // errorElが存在するか確認
-                        // メールアドレスで特定のエラーがある場合は上書きしない
-                        if (questionData.type !== 'email' || errorEl.textContent === '') {
-                            errorEl.textContent = 'この質問は必須です。';
-                        }
-                    }
-                }
-            });
-
-            return isValid;
+                    if (!answered && errorEl) { errorEl.textContent = '全ての行で少なくとも1つ選択してください。'; }
+                } else if (questionData.type === 'email') { const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; answered = answer && emailRegex.test(answer); if (!answered && errorEl) { errorEl.textContent = '有効なメールアドレスを入力してください。'; } } else { answered = answer !== undefined && answer !== null && answer !== ''; }
+                if (!answered) { isValid = false; if (errorEl) { if (questionData.type !== 'email' || errorEl.textContent === '') { errorEl.textContent = 'この質問は必須です。'; } } }
+            }); return isValid;
         }
-
-        // 現在のグループの'next'プロパティまたはシーケンシャルな順序に基づいて次のグループIDを見つけるヘルパー関数
-        // この関数はグループ内の次のページではなく、次のグループを見つけるためのものです。
         function findNextGroupIdForGroup(currentGroupId) {
-            const group = surveyJSONData.question_groups.find(g => g.id === currentGroupId); // surveyJSONData を使用
-            if (!group) return null;
-
-            // グループ内の質問の条件分岐をチェック
-            for (const q of group.questions) {
-                if (q.next) {
-                    const answer = answers[q.id];
-                    // 回答が存在し、対応するnext IDが定義されている場合のみ分岐を考慮
-                    if (answer !== undefined && q.next.hasOwnProperty(answer)) {
-                        return q.next[answer]; // 分岐先のグループIDを返す
-                    }
-                }
-            }
-
-            // グループレベルの'next'プロパティをチェック
-            if (group.next !== undefined) {
-                return group.next;
-            }
-
-            // 分岐もgroup.nextもない場合、シーケンシャルな順序で次のグループを見つける
-            const currentGroupIndex = surveyJSONData.question_groups.findIndex(g => g.id === currentGroupId); // surveyJSONData を使用
-            const nextGroup = surveyJSONData.question_groups[currentGroupIndex + 1]; // surveyJSONData を使用
-
-            return nextGroup ? nextGroup.id : null; // 次のグループIDを返すか、なければnullを返す
+            const group = surveyJSONData.question_groups.find(g => g.id === currentGroupId); if (!group) return null; for (const q of group.questions) { if (q.next) { const answer = answers[q.id]; if (answer !== undefined && q.next.hasOwnProperty(answer)) { return q.next[answer]; } } }
+            if (group.next !== undefined) { return group.next; }
+            const currentGroupIndex = surveyJSONData.question_groups.findIndex(g => g.id === currentGroupId); const nextGroup = surveyJSONData.question_groups[currentGroupIndex + 1]; return nextGroup ? nextGroup.id : null;
         }
-
-        // --- イベントリスナー ---
-        nextBtn.addEventListener('click', () => {
-            saveCurrentPageAnswers();
-            if (validateCurrentPage()) {
-                const currentPageData = pageHistory[currentPageIndex];
-                if (!currentPageData) return;
-
-                const { groupId, pageNumber } = currentPageData;
-                const group = surveyJSONData.question_groups.find(g => g.id === groupId); // surveyJSONData を使用
-                const totalGroupQuestions = group.questions.length;
-                const totalGroupPages = Math.ceil(totalGroupQuestions / QUESTIONS_PER_PAGE);
-
-                // 現在のグループ内にもっとページがあるかを確認
-                if ((pageNumber + 1) < totalGroupPages) {
-                    // はいの場合、現在のグループ内の次のページへ移動
-                    currentPageIndex++;
-                    pageHistory[currentPageIndex] = { groupId, pageNumber: pageNumber + 1, group }; // 既存の履歴エントリを更新
-                    renderPageContent();
-                    window.scrollTo(0, 0);
-                } else {
-                    // 現在のグループ内にこれ以上ページがない場合、次のグループを探す
-                    const nextGroupId = findNextGroupIdForGroup(groupId);
-
-                    if (nextGroupId === "") {
-                        submitForm(); // アンケート終了
-                    } else if (nextGroupId) {
-                        // 次のグループの最初のページ（ページ0）を生成
-                        generatePage(nextGroupId, 0);
-                        window.scrollTo(0, 0);
-                    } else {
-                        // これ以上グループがない場合、アンケートの終了とみなし、送信ボタンを表示
-                        updateNavigation();
-                    }
-                }
-            }
-        });
-
-        prevBtn.addEventListener('click', () => {
-            // 戻る場合、現在の回答を必ず保存
-            saveCurrentPageAnswers();
-
-            if (currentPageIndex > 0) {
-                currentPageIndex--;
-                // ページ履歴は既に正しいので、前のページの内容をレンダリングするだけ
-                renderPageContent();
-                window.scrollTo(0, 0);
-            }
-            // currentPageIndexが0の場合、prevBtnは無効になるため、このブロックには到達しない。
-        });
-
-        submitBtn.addEventListener('click', () => {
-            saveCurrentPageAnswers();
-            if (validateCurrentPage()) {
-                submitForm();
-            }
-        });
-
-        // 質問IDから質問ラベルを取得するヘルパー関数
+        nextBtn.addEventListener('click', () => { saveCurrentPageAnswers(); if (validateCurrentPage()) { const currentPageData = pageHistory[currentPageIndex]; if (!currentPageData) return; const { groupId, pageNumber } = currentPageData; const group = surveyJSONData.question_groups.find(g => g.id === groupId); const totalGroupQuestions = group.questions.length; const totalGroupPages = Math.ceil(totalGroupQuestions / 20); if ((pageNumber + 1) < totalGroupPages) { currentPageIndex++; pageHistory[currentPageIndex] = { groupId, pageNumber: pageNumber + 1, group }; renderPageContent(); window.scrollTo(0, 0); } else { const nextGroupId = findNextGroupIdForGroup(groupId); if (nextGroupId === "") { submitForm(); } else if (nextGroupId) { generatePage(nextGroupId, 0); window.scrollTo(0, 0); } else { updateNavigation(); } } } });
+        prevBtn.addEventListener('click', () => { saveCurrentPageAnswers(); if (currentPageIndex > 0) { currentPageIndex--; renderPageContent(); window.scrollTo(0, 0); } }); submitBtn.addEventListener('click', () => { saveCurrentPageAnswers(); if (validateCurrentPage()) { submitForm(); } });
         function getQuestionLabelFromId(questionId) {
-            for (const group of surveyJSONData.question_groups) { // surveyJSONData を使用
-                for (const q of group.questions) {
-                    if (q.id === questionId) {
-                        return q.label;
-                    }
-                }
-            }
-            return questionId; // ラベルが見つからない場合はIDをフォールバック
+            for (const group of surveyJSONData.question_groups) { for (const q of group.questions) { if (q.id === questionId) { return q.label; } } }
+            return questionId;
         }
-
-        // HTMLメールの回答値をフォーマットするヘルパー関数
         function formatAnswerValue(questionId, value) {
-            if (Array.isArray(value)) {
-                return value.join(', ');
-            } else if (typeof value === 'object' && value !== null) {
-                const question = surveyJSONData.question_groups.flatMap(g => g.questions).find(q => q.id === questionId); // surveyJSONData を使用
-                // マトリックス質問の場合の特別な処理で、可能な場合は行ラベルを表示
-                if (question && (question.type === 'matrix' || question.type === 'multi_matrix') && question.options && question.options[0]) {
+            if (Array.isArray(value)) { return value.join(', '); } else if (typeof value === 'object' && value !== null) {
+                const question = surveyJSONData.question_groups.flatMap(g => g.questions).find(q => q.id === questionId); if (question && (question.type === 'matrix' || question.type === 'multi_matrix') && question.options && question.options[0]) {
                     return Object.entries(value).map(([rowIndexStr, colValue]) => {
-                        const rowIndex = parseInt(rowIndexStr);
-                        const rowLabel = question.options[0][rowIndex];
-                        if (Array.isArray(colValue)) { // multi_matrixの場合
-                            return `<strong>${rowLabel}:</strong> ${colValue.join(', ')}`;
-                        }
-                        return `<strong>${rowLabel}:</strong> ${colValue}`; // matrixの場合
+                        const rowIndex = parseInt(rowIndexStr); const rowLabel = question.options[0][rowIndex]; if (Array.isArray(colValue)) { return `<strong>${rowLabel}:</strong> ${colValue.join(', ')}`; }
+                        return `<strong>${rowLabel}:</strong> ${colValue}`;
                     }).join('<br>');
                 }
-                return JSON.stringify(value, null, 2); // 他のオブジェクトはJSONをきれいに表示
+                return JSON.stringify(value, null, 2);
             }
-            // booleanの'true'/'false'文字列をより読みやすい日本語に変換
-            if (typeof value === 'string') {
-                if (value === 'true') return 'はい';
-                if (value === 'false') return 'いいえ';
-            }
+            if (typeof value === 'string') { if (value === 'true') return 'はい'; if (value === 'false') return 'いいえ'; }
             return String(value);
         }
-
-        // HTMLメールボディを生成するヘルパー関数
         function generateHtmlEmailBody(answers) {
             let htmlContent = `
         <div style="font-family: 'Noto Sans JP', sans-serif, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background-color: #ffffff;">
@@ -712,15 +375,8 @@
                     </tr>
                 </thead>
                 <tbody>
-    `;
-
-            for (const [key, value] of Object.entries(answers)) {
-                // email質問自体はメインの回答テーブルから除外する（メールアドレスはToフィールドで使用されるため）
-                const question = surveyJSONData.question_groups.flatMap(g => g.questions).find(q => q.id === key); // surveyJSONData を使用
-                if (question && question.type === 'email') {
-                    continue; // メインテーブルでのemail入力フィールドをスキップ
-                }
-
+    `; for (const [key, value] of Object.entries(answers)) {
+                const question = surveyJSONData.question_groups.flatMap(g => g.questions).find(q => q.id === key); if (question && question.type === 'email') { continue; }
                 htmlContent += `
             <tr>
                 <td style="padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; color: #333;">${getQuestionLabelFromId(key)}</td>
@@ -728,81 +384,17 @@
             </tr>
         `;
             }
-
             htmlContent += `
                 </tbody>
             </table>
             <p style="margin-top: 30px; text-align: center; color: #888; font-size: 0.9em;">このメールは自動送信されたものです。</p>
         </div>
-    `;
-
-            return htmlContent;
+    `; return htmlContent;
         }
-
-
         async function submitForm() {
-            submitBtn.disabled = true;
-            submitBtn.textContent = '送信中...'; // "Sending..."
-            nextBtn.classList.add('hidden');
-            prevBtn.disabled = true;
-
-            // GASのエンドポイントURLをJSONデータの最上位から取得
-            const gasEndpointUrl = surveyJSONData.gas_endpoint_url;
-
-            if (!gasEndpointUrl || gasEndpointUrl === "YOUR_DEPLOYED_APPS_SCRIPT_URL_HERE") {
-                showError('アンケートのJSONデータにGASのエンドポイントURLが正しく設定されていません。「gas_endpoint_url」をご確認ください。');
-                submitBtn.disabled = false;
-                submitBtn.textContent = '送信';
-                prevBtn.disabled = false;
-                return;
-            }
-
-            // HTML形式のメールコンテンツを生成
-            const htmlEmailContent = generateHtmlEmailBody(answers);
-
-            // answersオブジェクトにHTMLメールコンテンツを追加してApps Scriptに送信
-            // Apps Script側でこのキーを読み取り、メール送信に使用します
-            const payloadForAppsScript = { ...answers, _email_html_body: htmlEmailContent };
-
-            // Google Apps Script への送信
-            try {
-                const response = await fetch(gasEndpointUrl, { // JSONから取得したURLを使用
-                    method: 'POST',
-                    body: JSON.stringify(payloadForAppsScript), // HTMLコンテンツを含んだペイロードを送信
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-                });
-
-                // Apps ScriptからのレスポンスをJSONとしてパース
-                const result = await response.json();
-
-                if (result.status === 'success') {
-                    console.log('Google Apps Script にデータを送信しました。メール送信も成功しました。');
-                    appContainer.classList.add('hidden');
-                    thankYouMessage.classList.remove('hidden');
-                } else {
-                    // Apps Script側でエラーが発生した場合
-                    console.error('Google Apps Script からのエラー:', result.message);
-                    showError(`送信エラー: ${result.message}`);
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = '送信';
-                    prevBtn.disabled = false;
-                }
-
-            } catch (error) {
-                // ネットワークエラーなど、fetch自体が失敗した場合
-                console.error('送信エラー:', error);
-                showError('アンケートの送信に失敗しました。時間をおいて再度お試しください。');
-                submitBtn.disabled = false;
-                submitBtn.textContent = '送信';
-                prevBtn.disabled = false;
-            }
+            submitBtn.disabled = true; submitBtn.textContent = '送信中...'; nextBtn.classList.add('hidden'); prevBtn.disabled = true; const gasEndpointUrl = surveyJSONData.gas_endpoint_url; if (!gasEndpointUrl || gasEndpointUrl === "YOUR_DEPLOYED_APPS_SCRIPT_URL_HERE") { showError('アンケートのJSONデータにGASのエンドポイントURLが正しく設定されていません。「gas_endpoint_url」をご確認ください。'); submitBtn.disabled = false; submitBtn.textContent = '送信'; prevBtn.disabled = false; return; }
+            const htmlEmailContent = generateHtmlEmailBody(answers); const payloadForAppsScript = { ...answers, _email_html_body: htmlEmailContent }; try { const response = await fetch(gasEndpointUrl, { method: 'POST', body: JSON.stringify(payloadForAppsScript), headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); const result = await response.json(); if (result.status === 'success') { console.log('Google Apps Script にデータを送信しました。メール送信も成功しました。'); appContainer.classList.add('hidden'); thankYouMessage.classList.remove('hidden'); } else { console.error('Google Apps Script からのエラー:', result.message); showError(`送信エラー: ${result.message}`); submitBtn.disabled = false; submitBtn.textContent = '送信'; prevBtn.disabled = false; } } catch (error) { console.error('送信エラー:', error); showError('アンケートの送信に失敗しました。時間をおいて再度お試しください。'); submitBtn.disabled = false; submitBtn.textContent = '送信'; prevBtn.disabled = false; }
         }
-
-        function showError(message) {
-            errorDisplayMessage.textContent = message;
-            errorDisplay.classList.remove('hidden');
-        }
-
     </script>
 </body>
 
