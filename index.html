@@ -6,15 +6,10 @@
     <!-- ▼▼▼ GitHub Pages用リダイレクト処理 ▼▼▼ -->
     <script>
         (function () {
-            // 404.htmlからリダイレクトされた場合のクエリパラメータを取得
             const params = new URLSearchParams(window.location.search);
             const path = params.get('path');
             if (path) {
-                // GitHub Pagesのリポジトリ名部分を含むパスを取得
-                // 例: /my-repo/index.html -> /my-repo
                 const repoPath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-                // URLを書き換える (見た目をクリーンにし、リロードを防ぐ)
-                // 例: /my-repo/index.html?path=/survey1 -> /my-repo/survey1
                 window.history.replaceState(null, '', repoPath + path);
             }
         })();
@@ -24,47 +19,16 @@
     <title>アンケートフォーム</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* カスタムスタイル (変更なし) */
-        body {
-            font-family: 'Inter', 'Noto Sans JP', sans-serif;
-        }
-
-        .required-label::after {
-            content: '*';
-            color: #ef4444;
-            margin-left: 0.25rem;
-        }
-
-        .error-message {
-            color: #ef4444;
-            font-size: 0.875rem;
-            margin-top: 0.25rem;
-        }
-
-        input[type="text"],
-        input[type="number"],
-        input[type="date"],
-        input[type="email"],
-        textarea,
-        select {
-            padding: 0.5rem 0.75rem !important;
-        }
-
-        .matrix-cell-label {
-            display: block;
-            padding: 0.5rem;
-            cursor: pointer;
-        }
-
-        .matrix-cell-label input {
-            margin-right: 0.5rem;
-        }
+        body { font-family: 'Inter', 'Noto Sans JP', sans-serif; }
+        .required-label::after { content: '*'; color: #ef4444; margin-left: 0.25rem; }
+        .error-message { color: #ef4444; font-size: 0.875rem; margin-top: 0.25rem; }
+        input[type="text"], input[type="number"], input[type="date"], input[type="email"], input[type="password"], textarea, select { padding: 0.5rem 0.75rem !important; }
+        .matrix-cell-label { display: block; padding: 0.5rem; cursor: pointer; }
+        .matrix-cell-label input { margin-right: 0.5rem; }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 
 <body class="bg-gray-50 text-gray-800 flex items-center justify-center min-h-screen py-8">
@@ -73,44 +37,27 @@
         <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
     </div>
 
-    <main id="app-container" class="container mx-auto p-4 max-w-4xl w-full my-8 hidden">
-        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg">
-
+    <!-- ▼▼▼ アンケート回答画面 ▼▼▼ -->
+    <main id="app-container" class="hidden container mx-auto p-4 max-w-4xl w-full my-8">
+         <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg">
             <div id="form-header" class="border-b pb-4 mb-6">
                 <h1 id="form-title" class="text-3xl sm:text-4xl font-bold text-gray-900"></h1>
                 <p id="form-description" class="mt-2 text-gray-600"></p>
             </div>
-
-            <div id="error-display"
-                class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-6"
-                role="alert">
+            <div id="error-display" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
                 <strong class="font-bold">エラー:</strong>
                 <span id="error-display-message" class="block sm:inline"></span>
             </div>
-
             <form id="quiz-form" onsubmit="return false;">
-                <div id="questions-container" class="space-y-8">
-                    <!-- Questions will be rendered here -->
-                </div>
+                <div id="questions-container" class="space-y-8"></div>
             </form>
-
             <div id="progress-container" class="mt-8">
                 <p id="progress-text" class="text-center text-sm font-medium text-gray-600"></p>
             </div>
-
             <div id="navigation-controls" class="mt-8 flex justify-between items-center">
-                <button id="prev-btn" type="button"
-                    class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    戻る
-                </button>
-                <button id="next-btn" type="button"
-                    class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors">
-                    次へ
-                </button>
-                <button id="submit-btn" type="button"
-                    class="hidden bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors">
-                    送信
-                </button>
+                <button id="prev-btn" type="button" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">戻る</button>
+                <button id="next-btn" type="button" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors">次へ</button>
+                <button id="submit-btn" type="button" class="hidden bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors">送信</button>
             </div>
         </div>
     </main>
@@ -120,13 +67,72 @@
         <p class="text-gray-700">アンケートへの回答が正常に送信されました。</p>
     </div>
 
+    <!-- ▼▼▼ ログイン画面 ▼▼▼ -->
+    <div id="login-container" class="hidden container mx-auto p-4 max-w-md w-full my-8">
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg">
+            <h1 class="text-2xl font-bold text-gray-900 text-center">管理者ログイン</h1>
+            <div id="login-error-display" class="hidden mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert"></div>
+            <div class="space-y-6 mt-6">
+                <div>
+                    <label for="email-input" class="block text-md font-medium text-gray-800">メールアドレス</label>
+                    <input type="email" id="email-input" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="password-input" class="block text-md font-medium text-gray-800">パスワード</label>
+                    <input type="password" id="password-input" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                </div>
+                <button id="login-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">ログイン</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ▼▼▼ 管理画面 ▼▼▼ -->
+    <div id="admin-container" class="hidden container mx-auto p-4 max-w-2xl w-full my-8">
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-lg">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div>
+                    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">アンケート管理</h1>
+                    <p class="mt-2 text-gray-600">JSONファイルをアップロードしてアンケートを作成・更新します。</p>
+                </div>
+                <button id="logout-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">ログアウト</button>
+            </div>
+            <div id="admin-error-display" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
+                <strong class="font-bold">エラー:</strong>
+                <span id="admin-error-message" class="block sm:inline"></span>
+            </div>
+            <div id="admin-success-display" class="hidden bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
+                 <span id="admin-success-message" class="block sm:inline"></span>
+            </div>
+            <div class="space-y-6">
+                <div>
+                    <label for="json-upload-input" class="block text-md font-medium text-gray-800 required-label">アンケートJSONファイル</label>
+                    <p class="text-sm text-gray-500 mt-1">アンケートの構造を定義したJSONファイルを選択してください。</p>
+                    <input type="file" id="json-upload-input" accept=".json" class="mt-2 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+                <div>
+                    <label for="survey-id-input" class="block text-md font-medium text-gray-800 required-label">アンケートURLの末尾</label>
+                    <p class="text-sm text-gray-500 mt-1">このアンケートにアクセスするためのURLの末尾の文字列を入力してください (例: survey2024)。英数字とハイフン(-)のみ使用できます。</p>
+                    <div class="mt-2 flex rounded-md shadow-sm">
+                        <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">.../</span>
+                        <input type="text" id="survey-id-input" placeholder="my-awesome-survey" class="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md focus:ring-blue-500 focus:border-blue-500 sm:text-sm border-gray-300">
+                    </div>
+                </div>
+                <div>
+                    <button id="save-survey-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">保存してURLを生成</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
     <!-- ▼▼▼ メインのJavaScript処理 ▼▼▼ -->
     <script type="module">
         // Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-        // --- Firebase設定 (ご自身のプロジェクトのものに置き換えてください) ---
+        // --- Firebase設定 ---
         const firebaseConfig = {
             apiKey: "AIzaSyBPVmVHYilSNRCBPapItOZyOUFAwLe8nY4",
             authDomain: "game-of-questionnaire.firebaseapp.com",
@@ -136,22 +142,27 @@
             appId: "1:70165208444:web:7b296d37d395540d1658f9"
         };
 
-        // Firebaseの初期化
-        let db;
+        // --- Firebaseの初期化 ---
+        let db, auth;
         try {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
+            auth = getAuth(app);
         } catch (e) {
-            console.error("Firebaseの初期化に失敗しました。設定情報を確認してください。", e);
+            console.error("Firebaseの初期化に失敗しました。", e);
+            document.getElementById('loading-spinner').style.display = 'none';
+            document.body.innerHTML = '<p>Firebaseの初期化に失敗しました。設定を確認してください。</p>';
         }
-
 
         // --- アンケートJSONデータ ---
         let surveyJSONData = {};
 
-        // --- DOM要素 (変更なし) ---
-        const appContainer = document.getElementById('app-container');
+        // --- DOM要素 ---
         const loadingSpinner = document.getElementById('loading-spinner');
+        const appContainer = document.getElementById('app-container');
+        const adminContainer = document.getElementById('admin-container');
+        const loginContainer = document.getElementById('login-container');
+        const thankYouMessage = document.getElementById('thank-you-message');
         const errorDisplay = document.getElementById('error-display');
         const errorDisplayMessage = document.getElementById('error-display-message');
         const formTitleEl = document.getElementById('form-title');
@@ -161,40 +172,60 @@
         const nextBtn = document.getElementById('next-btn');
         const submitBtn = document.getElementById('submit-btn');
         const progressText = document.getElementById('progress-text');
-        const thankYouMessage = document.getElementById('thank-you-message');
 
-        // --- 状態管理 (変更なし) ---
+        // --- 状態管理 ---
         let answers = {};
         let pageHistory = [];
         let currentPageIndex = 0;
 
-        // --- 初期化 (ここを大幅に修正) ---
-        document.addEventListener('DOMContentLoaded', initializeSurvey);
+        // --- 初期化ロジック ---
+        document.addEventListener('DOMContentLoaded', main);
 
-        async function initializeSurvey() {
-            if (!db) {
-                showError("データベース接続に失敗しました。Firebaseの設定を確認してください。");
-                loadingSpinner.style.display = 'none';
-                appContainer.classList.remove('hidden');
-                return;
+        function main() {
+            const pathSegments = window.location.pathname.split('/').filter(p => p && p !== 'index.html');
+            const repoName = pathSegments.length > 0 ? pathSegments[0] : null;
+            const surveyId = pathSegments.length > 1 ? pathSegments[pathSegments.length - 1] : null;
+
+            // URLがルートパス、またはリポジトリ名のみの場合
+            if (!surveyId || surveyId === repoName) {
+                setupAuthObserver();
+            } else {
+                // 通常のアンケート表示処理
+                displaySurvey(surveyId);
             }
+        }
 
-            try {
-                // 1. URLパスからアンケートIDを取得
-                // 例: "https://user.github.io/repo-name/survey1" -> "survey1"
-                // .filter(Boolean)で空の要素を取り除く
-                const pathSegments = window.location.pathname.split('/').filter(Boolean);
-                // 最後の要素がアンケートID。リポジトリ名の場合はundefinedになる
-                const surveyId = pathSegments[pathSegments.length - 1];
-                const repoName = pathSegments[0];
-
-                // ルートパスやリポジトリ名直下へのアクセスはエラー
-                if (!surveyId || surveyId === repoName || surveyId === "index.html") {
-                    showError('有効なアンケートが指定されていません。URLの末尾にアンケート名を指定してください。 (例: .../Questionnaire1)');
-                    return;
+        function setupAuthObserver() {
+            onAuthStateChanged(auth, user => {
+                loadingSpinner.style.display = 'none';
+                if (user) {
+                    loginContainer.classList.add('hidden');
+                    displayAdminInterface();
+                } else {
+                    adminContainer.classList.add('hidden');
+                    displayLoginInterface();
                 }
+            });
+        }
 
-                // 2. FirebaseからアンケートIDに対応するJSONファイル名を取得
+        function displayLoginInterface() {
+            loginContainer.classList.remove('hidden');
+            const loginBtn = document.getElementById('login-btn');
+            if (loginBtn) {
+                loginBtn.addEventListener('click', handleLogin);
+            }
+        }
+        
+        function displayAdminInterface() {
+            adminContainer.classList.remove('hidden');
+            const saveSurveyBtn = document.getElementById('save-survey-btn');
+            const logoutBtn = document.getElementById('logout-btn');
+            if (saveSurveyBtn) saveSurveyBtn.addEventListener('click', handleSaveSurvey);
+            if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+        }
+
+        async function displaySurvey(surveyId) {
+             try {
                 const surveyDocRef = doc(db, 'surveys', surveyId);
                 const surveyDocSnap = await getDoc(surveyDocRef);
 
@@ -202,28 +233,21 @@
                     throw new Error(`指定されたアンケートID "${surveyId}" はデータベースに見つかりませんでした。`);
                 }
 
-                const surveyMappingData = surveyDocSnap.data();
-                const jsonFileName = surveyMappingData.jsonFile;
+                surveyJSONData = surveyDocSnap.data();
 
-                if (!jsonFileName) {
-                    throw new Error(`アンケートID "${surveyId}" の設定にJSONファイル名がありません。`);
+                if (!surveyJSONData || !surveyJSONData.title || !surveyJSONData.question_groups) {
+                    throw new Error(`アンケートID "${surveyId}" のデータ形式が正しくありません。`);
                 }
 
-                // 3. 取得したJSONファイル名を元にアンケートデータをフェッチ
-                // JSONファイルはindex.htmlからの相対パスにあると仮定
-                const response = await fetch(jsonFileName);
-                if (!response.ok) {
-                    throw new Error(`アンケートファイル '${jsonFileName}' の読み込みに失敗しました。 (HTTP ${response.status})`);
-                }
-                surveyJSONData = await response.json();
-
-                // 4. アンケートの描画（元のロジックを流用）
+                appContainer.classList.remove('hidden');
                 formTitleEl.textContent = surveyJSONData.title;
                 formDescriptionEl.textContent = surveyJSONData.description;
 
                 const firstGroupId = surveyJSONData.question_groups[0]?.id;
                 if (firstGroupId) {
                     generatePage(firstGroupId, 0);
+                } else {
+                    throw new Error("アンケートに質問グループが見つかりません。");
                 }
 
             } catch (error) {
@@ -231,39 +255,134 @@
                 showError(`${error.message}`);
             } finally {
                 loadingSpinner.style.display = 'none';
-                appContainer.classList.remove('hidden');
                 if (!surveyJSONData.title) {
-                    document.getElementById('quiz-form').style.display = 'none';
-                    document.getElementById('navigation-controls').style.display = 'none';
-                    document.getElementById('form-header').style.display = 'none';
+                    appContainer.classList.add('hidden');
                 }
             }
         }
 
-        // showError関数を少し変更
+        async function handleLogin() {
+            const email = document.getElementById('email-input').value;
+            const password = document.getElementById('password-input').value;
+            const errorDisplay = document.getElementById('login-error-display');
+            errorDisplay.classList.add('hidden');
+
+            if (!email || !password) {
+                errorDisplay.textContent = 'メールアドレスとパスワードを入力してください。';
+                errorDisplay.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                console.error("ログインエラー:", error);
+                errorDisplay.textContent = 'ログインに失敗しました。メールアドレスまたはパスワードが正しくありません。';
+                errorDisplay.classList.remove('hidden');
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error("ログアウトエラー:", error);
+                alert("ログアウトに失敗しました。");
+            }
+        }
+
+        async function handleSaveSurvey() {
+            const adminErrorDisplay = document.getElementById('admin-error-display');
+            const adminErrorMessage = document.getElementById('admin-error-message');
+            const adminSuccessDisplay = document.getElementById('admin-success-display');
+            const adminSuccessMessage = document.getElementById('admin-success-message');
+            const jsonUploadInput = document.getElementById('json-upload-input');
+            const surveyIdInput = document.getElementById('survey-id-input');
+            const saveSurveyBtn = document.getElementById('save-survey-btn');
+
+            adminErrorDisplay.classList.add('hidden');
+            adminSuccessDisplay.classList.add('hidden');
+            saveSurveyBtn.disabled = true;
+            saveSurveyBtn.textContent = '保存中...';
+
+            const surveyId = surveyIdInput.value.trim();
+            const jsonFile = jsonUploadInput.files[0];
+
+            const showAdminError = (message) => {
+                adminErrorMessage.textContent = message;
+                adminErrorDisplay.classList.remove('hidden');
+                saveSurveyBtn.disabled = false;
+                saveSurveyBtn.textContent = '保存してURLを生成';
+            };
+
+            if (!surveyId || !jsonFile) {
+                showAdminError("アンケートURLの末尾とJSONファイルの両方を指定してください。");
+                return;
+            }
+            if (!/^[a-zA-Z0-9-]+$/.test(surveyId)) {
+                showAdminError("URLの末尾には英数字とハイフン(-)のみ使用できます。");
+                return;
+            }
+            if (jsonFile.type !== 'application/json') {
+                showAdminError("JSONファイル (.json) を選択してください。");
+                return;
+            }
+
+            let surveyData;
+            try {
+                const fileContent = await jsonFile.text();
+                surveyData = JSON.parse(fileContent);
+                if (!surveyData.title || !surveyData.question_groups || !surveyData.gas_endpoint_url) {
+                     throw new Error("JSONの形式が正しくありません。'title', 'question_groups', 'gas_endpoint_url' フィールドが必要です。");
+                }
+            } catch (e) {
+                showAdminError(`JSONファイルの読み込みまたは解析に失敗しました: ${e.message}`);
+                return;
+            }
+
+            try {
+                const surveyDocRef = doc(db, 'surveys', surveyId);
+                const surveyDocSnap = await getDoc(surveyDocRef);
+
+                if (surveyDocSnap.exists()) {
+                    const overwrite = window.confirm(`アンケートID "${surveyId}" は既に存在します。上書きしますか？`);
+                    if (!overwrite) {
+                        showAdminError("保存をキャンセルしました。別のURLの末尾を指定してください。");
+                        return;
+                    }
+                }
+
+                await setDoc(surveyDocRef, surveyData);
+
+                const surveyUrl = `${window.location.origin}${window.location.pathname.replace(/index\.html$/, '')}${surveyId}`;
+                adminSuccessMessage.innerHTML = `アンケートを保存しました！<br>公開URL: <a href="${surveyUrl}" target="_blank" class="font-bold underline">${surveyUrl}</a>`;
+                adminSuccessDisplay.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Firebaseへの保存に失敗しました:", error);
+                showAdminError(`Firebaseへの保存に失敗しました: ${error.message}`);
+            } finally {
+                saveSurveyBtn.disabled = false;
+                saveSurveyBtn.textContent = '保存してURLを生成';
+            }
+        }
+
         function showError(message) {
             errorDisplayMessage.textContent = message;
             errorDisplay.classList.remove('hidden');
-            // ローディングを隠し、コンテナを表示
             loadingSpinner.style.display = 'none';
             appContainer.classList.remove('hidden');
-            // エラー時はフォーム関連を非表示にする
             document.getElementById('quiz-form').style.display = 'none';
             document.getElementById('navigation-controls').style.display = 'none';
             document.getElementById('form-header').style.display = 'none';
             document.getElementById('progress-container').style.display = 'none';
         }
 
-        /*
-        ================================================================
-        以降のJavaScript関数 (generatePage, createQuestionElement, etc.)
-        は、変更の必要はありません。元のコードをそのまま流用してください。
-        ================================================================
-        */
+        // --- アンケート描画・操作関連の関数群 (変更なし) ---
         function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } }
         function generatePage(groupId, pageNumber = 0) {
             const group = surveyJSONData.question_groups.find(g => g.id === groupId); if (!group) { console.error(`Group with ID '${groupId}' not found.`); return; }
-            if (group.randomize && !group._shuffled) { shuffleArray(group.questions); group._shuffled = true; console.log(`Group '${group.id}' questions shuffled.`); }
+            if (group.randomize && !group._shuffled) { shuffleArray(group.questions); group._shuffled = true; }
             const totalGroupPages = Math.ceil(group.questions.length / 20); if (pageNumber >= totalGroupPages) {
                 const nextGroupId = findNextGroupIdForGroup(groupId); if (nextGroupId === "") { submitForm(); } else if (nextGroupId) { generatePage(nextGroupId, 0); } else { updateNavigation(); }
                 return;
@@ -397,5 +516,4 @@
         }
     </script>
 </body>
-
 </html>
